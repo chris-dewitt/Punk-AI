@@ -19,3 +19,8 @@ weights/
 *.keys.json
 audit*.jsonl
 .env
+
+# training artifacts: corpora and checkpoints are large and reproducible
+corpus/
+runs/
+*.bin

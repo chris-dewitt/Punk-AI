@@ -170,14 +170,23 @@ def load_backend(spec: str) -> Backend:
     echo                      -> EchoBackend
     llamacpp:http://host:port -> LlamaCppBackend
     transformers:/path/to/dir -> TransformersBackend
+    nano:/path/to/run         -> NanoBackend (a model you trained yourself)
     """
     if spec == "echo":
         return EchoBackend()
     kind, _, rest = spec.partition(":")
     if kind == "llamacpp":
         return LlamaCppBackend(base_url=rest or "http://127.0.0.1:8080")
+    if kind == "nano":
+        if not rest:
+            raise BackendError("nano backend needs a run directory, e.g. nano:./runs/mine")
+        from punkai.nano.generate import NanoBackend  # lazy: needs torch
+
+        return NanoBackend(run_dir=rest)
     if kind == "transformers":
         if not rest:
             raise BackendError("transformers backend needs a model directory")
         return TransformersBackend(model_dir=rest)
-    raise BackendError(f"unknown backend {spec!r}; try echo, llamacpp:URL, transformers:DIR")
+    raise BackendError(
+        f"unknown backend {spec!r}; try echo, llamacpp:URL, transformers:DIR, nano:RUNDIR"
+    )

@@ -18,6 +18,8 @@ dependencies = []  # the core is stdlib-only on purpose. See docs/SUPPLY_CHAIN.m
 # stack you did not ask for. Pick the extras your rig can actually run.
 hub = ["huggingface_hub>=0.23", "safetensors>=0.4"]
 torch = ["torch>=2.2", "transformers>=4.40", "accelerate>=0.30"]
+# Train a model from scratch. The tokenizer and corpus tools need neither.
+nano = ["torch>=2.2", "numpy>=1.24"]
 train = ["peft>=0.11", "datasets>=2.19", "trl>=0.9", "bitsandbytes>=0.43"]
 dev = ["pytest>=8", "ruff>=0.5"]
 

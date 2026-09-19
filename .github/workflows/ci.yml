@@ -29,6 +29,23 @@ jobs:
       - name: Lint
         run: ruff check src tests examples
 
+  nano:
+    # The from-scratch model is the heart of the repo, so it gets real CI even
+    # though the torch install is slow. CPU wheels only -- no GPU needed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with the nano extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e '.[dev,nano]'
+      - name: Test the model, tokenizer and training loop
+        run: pytest tests/test_nano_model.py tests/test_nano_tokenizer.py -q
+
   demo:
     runs-on: ubuntu-latest
     steps:

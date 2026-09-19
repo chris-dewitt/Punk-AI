@@ -257,6 +257,141 @@ def cmd_plan(args) -> int:
     return 0
 
 
+def cmd_corpus(args) -> int:
+    from punkai.nano.data import GUTENBERG_DEFAULT, fetch_gutenberg, load_local
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    if args.files:
+        corpus = load_local(args.files, license_note=args.license)
+    else:
+        ids = GUTENBERG_DEFAULT
+        if args.ids:
+            ids = {int(i): f"Project Gutenberg #{int(i)}" for i in args.ids.split(",")}
+        print(f"fetching {len(ids)} public-domain work(s) (cached after the first run)...")
+        corpus = fetch_gutenberg(ids, cache_dir=out / "cache")
+
+    (out / "corpus.txt").write_text(corpus.text, encoding="utf-8")
+    corpus.save_card(out / "CORPUS_CARD.md")
+    corpus.save_manifest(out / "corpus.json")
+    print(f"{corpus.chars:,} characters from {len(corpus.sources)} source(s)")
+    for source in corpus.sources:
+        print(f"  {source.chars:>10,}  {source.license:<34} {source.name}")
+    print(f"\nwrote {out}/corpus.txt, CORPUS_CARD.md, corpus.json")
+    print("Keep the card with the model. It is the question open weights cannot answer.")
+    return 0
+
+
+def cmd_tokenizer(args) -> int:
+    from punkai.nano.data import write_token_bin
+    from punkai.nano.tokenizer import BPETokenizer
+
+    corpus_path = Path(args.corpus)
+    if corpus_path.is_dir():
+        corpus_path = corpus_path / "corpus.txt"
+    text = corpus_path.read_text(encoding="utf-8")
+
+    print(f"training BPE on {len(text):,} characters, target vocab {args.vocab}...")
+    tokenizer = BPETokenizer.train(text, vocab_size=args.vocab, verbose=True)
+    out = Path(args.out)
+    tokenizer.save(out)
+    ids = tokenizer.encode(text)
+    bin_path = out.parent / "tokens.bin"
+    write_token_bin(ids, bin_path, tokenizer.vocab_size)
+
+    print(f"  {len(tokenizer.merges)} merges, vocab {tokenizer.vocab_size}")
+    print(f"  {len(ids):,} tokens, {tokenizer.compression(text[:200_000]):.2f} bytes/token")
+    print(f"  wrote {out} and {bin_path}")
+    sample = [tokenizer.decode([i]) for i in ids[300:312]]
+    print(f"  sample segmentation: {sample}")
+    return 0
+
+
+def cmd_pretrain(args) -> int:
+    import json as _json
+
+    from punkai.nano.data import TokenData
+    from punkai.nano.model import NanoConfig, NanoLM
+    from punkai.nano.tokenizer import BPETokenizer
+    from punkai.nano.train import TrainConfig, TrainingRun, train
+
+    corpus_dir = Path(args.corpus)
+    tokenizer = BPETokenizer.load(corpus_dir / "tokenizer.json")
+    data = TokenData(corpus_dir / "tokens.bin", tokenizer.vocab_size)
+
+    model_config = NanoConfig(
+        vocab_size=tokenizer.vocab_size,
+        block_size=args.block,
+        n_layer=args.layers,
+        n_head=args.heads,
+        n_kv_head=args.kv_heads,
+        n_embd=args.embd,
+        dropout=args.dropout,
+    )
+    train_config = TrainConfig(
+        out_dir=args.out,
+        data_path=str(corpus_dir / "tokens.bin"),
+        batch_size=args.batch,
+        block_size=args.block,
+        max_steps=args.steps,
+        learning_rate=args.lr,
+        device=args.device,
+    )
+    model = NanoLM(model_config)
+
+    corpus_sha = ""
+    manifest = corpus_dir / "corpus.json"
+    if manifest.exists():
+        corpus_sha = _json.loads(manifest.read_text(encoding="utf-8")).get("sha256", "")
+
+    chinchilla = model.chinchilla_tokens()
+    if len(data) < chinchilla / 4:
+        print(
+            f"note: {len(data):,} tokens for a model that wants roughly {chinchilla:,}. "
+            "It will memorize rather than generalize -- watch val loss part company "
+            "with train loss. Smaller model or more text."
+        )
+    run = TrainingRun(
+        model_config=model_config.to_dict(),
+        train_config=train_config.to_dict(),
+        corpus_sha256=corpus_sha,
+        tokenizer_sha256=tokenizer.corpus_sha256,
+        vocab_size=tokenizer.vocab_size,
+        total_tokens=len(data),
+    )
+    train(model, data, train_config, run)
+
+    # A checkpoint without its tokenizer is unreadable, so keep a copy together.
+    tokenizer.save(Path(args.out) / "tokenizer.json")
+    print(f"\nsample it:  punk sample {args.out} --prompt 'It was'")
+    print(f"grade it:   punk eval capability_smoke --backend nano:{args.out}")
+    return 0
+
+
+def cmd_sample(args) -> int:
+    from punkai.nano.generate import generate_text, load_run
+
+    model, tokenizer, run = load_run(args.run_dir, device=args.device)
+    if args.show_provenance:
+        print(f"model      : {model.num_params():,} params, {model.config.n_layer} layers")
+        print(f"corpus     : sha256 {run.get('corpus_sha256', 'unknown')[:16]}")
+        print(f"val loss   : {run.get('final_val_loss', float('nan')):.3f}")
+        print(f"git commit : {run.get('git_commit', 'unknown')[:12]}")
+        print()
+    text = generate_text(
+        model,
+        tokenizer,
+        args.prompt,
+        max_new_tokens=args.tokens,
+        temperature=args.temperature,
+        top_k=args.top_k,
+        seed=args.seed,
+        device=args.device,
+    )
+    print(args.prompt + text)
+    return 0
+
+
 def cmd_serve(args) -> int:
     from punkai.guards import GuardPolicy
     from punkai.serve import AuditLog, KeyStore, ServerConfig, load_backend, serve_forever
@@ -371,6 +506,45 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--vram", type=float)
     p.add_argument("--no-checkpointing", action="store_true")
     p.set_defaults(func=cmd_plan)
+
+    p = sub.add_parser("corpus", help="build a training corpus, with provenance")
+    p.add_argument("--out", default="./corpus")
+    p.add_argument("--ids", help="comma-separated Project Gutenberg ids")
+    p.add_argument("files", nargs="*", help="your own text files instead of Gutenberg")
+    p.add_argument("--license", default="unspecified", help="licence of your own files")
+    p.set_defaults(func=cmd_corpus)
+
+    p = sub.add_parser("tokenizer", help="train a BPE tokenizer on your corpus")
+    p.add_argument("corpus", nargs="?", default="./corpus")
+    p.add_argument("--vocab", type=int, default=4096)
+    p.add_argument("--out", default="./corpus/tokenizer.json")
+    p.set_defaults(func=cmd_tokenizer)
+
+    p = sub.add_parser("pretrain", help="train a language model from scratch")
+    p.add_argument("--corpus", default="./corpus")
+    p.add_argument("--out", default="./runs/nano")
+    p.add_argument("--steps", type=int, default=1500)
+    p.add_argument("--layers", type=int, default=6)
+    p.add_argument("--heads", type=int, default=4)
+    p.add_argument("--kv-heads", type=int, default=2, dest="kv_heads")
+    p.add_argument("--embd", type=int, default=256)
+    p.add_argument("--block", type=int, default=128)
+    p.add_argument("--batch", type=int, default=32)
+    p.add_argument("--dropout", type=float, default=0.1)
+    p.add_argument("--lr", type=float, default=6e-4)
+    p.add_argument("--device", default="auto")
+    p.set_defaults(func=cmd_pretrain)
+
+    p = sub.add_parser("sample", help="generate text from a model you trained")
+    p.add_argument("run_dir")
+    p.add_argument("--prompt", default="")
+    p.add_argument("--tokens", type=int, default=200)
+    p.add_argument("--temperature", type=float, default=0.8)
+    p.add_argument("--top-k", type=int, default=40, dest="top_k")
+    p.add_argument("--seed", type=int)
+    p.add_argument("--device", default="cpu")
+    p.add_argument("--show-provenance", action="store_true", dest="show_provenance")
+    p.set_defaults(func=cmd_sample)
 
     p = sub.add_parser("serve", help="serve a model behind auth, limits and guards")
     p.add_argument("--backend", default="echo", help="echo | llamacpp:URL | transformers:DIR")
