@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# never commit weights, keys, or logs
+weights/
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+.smith/
+*.keys.json
+audit*.jsonl
+.env

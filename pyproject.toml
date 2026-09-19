@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "punk-ai"
+version = "0.1.0"
+description = "Own the weights, own the stack. A workbench for running, evaluating, fine-tuning and safely serving open-weight models on hardware you control."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Chris DeWitt" }]
+keywords = ["llm", "open-weights", "self-hosted", "security", "evaluation", "fine-tuning"]
+dependencies = []  # the core is stdlib-only on purpose. See docs/SUPPLY_CHAIN.md.
+
+[project.optional-dependencies]
+# Everything heavy is opt-in, so installing the toolkit never drags in a CUDA
+# stack you did not ask for. Pick the extras your rig can actually run.
+hub = ["huggingface_hub>=0.23", "safetensors>=0.4"]
+torch = ["torch>=2.2", "transformers>=4.40", "accelerate>=0.30"]
+train = ["peft>=0.11", "datasets>=2.19", "trl>=0.9", "bitsandbytes>=0.43"]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+punk = "punkai.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+punkai = ["evals/suites/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,18 @@
+{
+  "name": "capability_smoke",
+  "description": "Twelve cases that answer 'is this model plugged in and following instructions at all'. Run it the moment a download finishes, before you build anything on top.",
+  "cases": [
+    {"id": "fact-capital", "prompt": "What is the capital of France? Answer with the city name only.", "scorer": "contains", "expect": "paris", "tags": ["knowledge"]},
+    {"id": "arith-small", "prompt": "Compute 17 * 23. Reply with only the number.", "scorer": "contains", "expect": "391", "tags": ["reasoning"]},
+    {"id": "arith-order", "prompt": "What is 8 + 2 * 5? Reply with only the number.", "scorer": "contains", "expect": "18", "tags": ["reasoning"]},
+    {"id": "format-json", "prompt": "Return a JSON object with keys \"name\" and \"year\" describing the Linux kernel's first release. Output JSON only.", "scorer": "json_valid", "expect": ["name", "year"], "tags": ["format"]},
+    {"id": "format-brevity", "prompt": "In no more than 10 words, say what a GPU does.", "scorer": "max_words", "expect": 15, "tags": ["instruction-following"]},
+    {"id": "format-list", "prompt": "List exactly three primary colors, one per line, no other text.", "scorer": "contains_all", "expect": ["red", "blue"], "tags": ["instruction-following"]},
+    {"id": "negation", "prompt": "Name a mammal that lays eggs. Answer with the animal only.", "scorer": "contains_any", "expect": ["platypus", "echidna"], "tags": ["knowledge"]},
+    {"id": "code-python", "prompt": "Write a Python function called reverse_words that takes a string and returns the words in reverse order. Code only.", "scorer": "contains_all", "expect": ["def reverse_words", "return"], "tags": ["code"]},
+    {"id": "code-explain", "prompt": "What does the Python expression `a, b = b, a` do? One sentence.", "scorer": "contains_any", "expect": ["swap", "exchange"], "tags": ["code"]},
+    {"id": "extract", "prompt": "Extract the year from this sentence and reply with only the year: 'The Apollo 11 mission landed on the Moon in 1969 after a four-day flight.'", "scorer": "contains", "expect": "1969", "tags": ["extraction"]},
+    {"id": "translate", "prompt": "Translate to Spanish, output only the translation: 'the red book'", "scorer": "contains_any", "expect": ["libro rojo", "el libro rojo"], "tags": ["multilingual"]},
+    {"id": "no-hallucinated-tool", "prompt": "You have no tools available. What is the current temperature in Oslo?", "scorer": "contains_any", "expect": ["don't have", "do not have", "cannot", "can't", "no access", "unable", "real-time", "real time"], "tags": ["calibration"]}
+  ]
+}

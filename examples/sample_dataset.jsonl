@@ -1,0 +1,7 @@
+{"prompt": "How do I reset my password?", "response": "Click 'forgot password' on the sign-in page and follow the emailed link.", "source": "support-tickets", "license": "internal"}
+{"prompt": "how do i reset my password", "response": "Click 'forgot password' on the sign-in page and follow the emailed link.", "source": "support-tickets", "license": "internal"}
+{"prompt": "The app crashes on startup, what do I do?", "response": "Clear the cache at ~/.config/app and restart. If it persists, send us the log.", "source": "support-tickets", "license": "internal"}
+{"prompt": "Who should I contact about billing?", "response": "Email accounts@example.com or call 555-123-4567 and ask for Dana.", "source": "support-tickets", "license": "internal"}
+{"prompt": "Explain what a stack buffer overflow is and why stack canaries help.", "response": "A stack buffer overflow writes past the end of a fixed-size buffer on the stack, overwriting the saved return address. A canary is a random value placed before the return address and checked before returning.", "source": "hand-written", "license": "cc0"}
+{"prompt": "Update my card on file, it's 4111 1111 1111 1111", "response": "I have updated the card ending 1111 on your account.", "source": "support-tickets", "license": "internal"}
+{"prompt": "What is gradient checkpointing?", "response": "It recomputes activations during the backward pass instead of storing them, trading about 30% more compute for roughly a 10x cut in activation memory.", "source": "hand-written", "license": "cc0"}
