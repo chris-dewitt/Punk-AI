@@ -87,7 +87,7 @@ pip install -e '.[hub]'       # + downloading from the Hub
 pip install -e '.[torch]'     # + in-process inference
 pip install -e '.[train]'     # + QLoRA fine-tuning
 pip install -e '.[dev]'       # + pytest and ruff
-pytest                        # 271 tests, no network, no GPU, under a second
+pytest                        # 274 tests, no network, no GPU, under a second
 ```
 
 ## Three opinions this repo is built on

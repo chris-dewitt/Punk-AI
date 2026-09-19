@@ -126,6 +126,19 @@ class TestInputHandling:
         assert status == 400
         assert "Traceback" not in json.dumps(payload)
 
+    def test_error_on_an_unread_body_closes_the_connection(self, live_server):
+        """Otherwise the unread body is parsed as the next request on that socket."""
+        url, key, _ = live_server(max_body_bytes=512)
+        status, _, headers = call(f"{url}/v1/generate", {"prompt": "x" * 4000}, token=key)
+        assert status == 413
+        assert headers.get("Connection", "").lower() == "close"
+
+    def test_successful_request_does_not_force_a_close(self, live_server):
+        url, key, _ = live_server()
+        status, _, headers = call(f"{url}/v1/generate", {"prompt": "hi"}, token=key)
+        assert status == 200
+        assert headers.get("Connection", "").lower() != "close"
+
     def test_unknown_route_is_404(self, live_server):
         url, key, _ = live_server()
         assert call(f"{url}/v1/admin", {"x": 1}, token=key)[0] == 404

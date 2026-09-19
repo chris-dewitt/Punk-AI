@@ -86,6 +86,32 @@ class _Handler(BaseHTTPRequestHandler):
         """Access logs go to the audit chain, not to stderr with query strings in them."""
         return
 
+    def _lingering_close(self) -> None:
+        """Close a connection whose request body we never read, without cutting
+        the client off mid-write.
+
+        Responding before consuming the body leaves unread bytes in the socket:
+        keep the connection alive and the next request parse reads the old body
+        as a request line; close it outright and the client -- still writing --
+        gets ECONNRESET instead of the error we just sent it. The fix is the
+        textbook lingering close: flush the response, half-close so the client
+        sees EOF after reading it, then drain what it already sent (bounded, so
+        a client that keeps talking cannot hold the worker open).
+        """
+        self.close_connection = True
+        try:
+            self.wfile.flush()
+            self.connection.shutdown(socket.SHUT_WR)
+            self.connection.settimeout(0.25)
+            remaining = self.config.max_body_bytes
+            while remaining > 0:
+                chunk = self.connection.recv(min(8192, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            pass  # the client already went away; nothing to do about it
+
     def _send_json(self, status: HTTPStatus, payload: dict, extra_headers: dict | None = None):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -99,7 +125,15 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _error(self, status: HTTPStatus, message: str, extra_headers: dict | None = None):
-        self._send_json(status, {"error": message}, extra_headers)
+        unread_body = self.command == "POST" and not self._body_consumed
+        headers = dict(extra_headers or {})
+        if unread_body:
+            headers["Connection"] = "close"
+        self._send_json(status, {"error": message}, headers)
+        if unread_body:
+            self._lingering_close()
+
+    _body_consumed = False
 
     def _read_body(self) -> bytes | None:
         if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
@@ -121,7 +155,9 @@ class _Handler(BaseHTTPRequestHandler):
             )
             return None
         # Exact read: never trust the declared length beyond the cap we just applied.
-        return self.rfile.read(length)
+        body = self.rfile.read(length)
+        self._body_consumed = True
+        return body
 
     def _authenticate(self):
         if not self.config.require_auth:
@@ -150,6 +186,10 @@ class _Handler(BaseHTTPRequestHandler):
         return record.key_id, record
 
     # -- routes -----------------------------------------------------------
+
+    def handle_one_request(self) -> None:  # noqa: D102
+        self._body_consumed = False
+        super().handle_one_request()
 
     def do_GET(self) -> None:  # noqa: N802 -- stdlib naming
         if self.path == "/healthz":
