@@ -113,8 +113,8 @@ class TestHarness:
         )
         result = run_suite(suite, lambda p: "yes", model_name="m")
         assert result.passed == 1 and result.total == 2
-        assert result.by_tag()["x"] == (1, 2)
-        assert result.by_tag()["y"] == (0, 1)
+        assert (result.by_tag()["x"].successes, result.by_tag()["x"].trials) == (1, 2)
+        assert result.by_tag()["y"].rate == 0.0
         assert [f.id for f in result.failures()] == ["b"]
 
     def test_a_raising_backend_is_a_failure_not_a_crash(self):
@@ -138,6 +138,96 @@ class TestHarness:
         suite = Suite(name="t", cases=[EvalCase("a", "p", "contains", "no", tags=["z"])])
         text = run_suite(suite, lambda p: "yes", model_name="m").summary()
         assert "0/1" in text and "z" in text
+
+
+class TestRepeatsAndFlakiness:
+    def _flapping(self, pattern):
+        """A backend whose answer follows a fixed pass/fail pattern."""
+        seq = iter(pattern * 100)
+        return lambda prompt: "yes" if next(seq) else "no"
+
+    def _suite(self):
+        return Suite(name="t", cases=[EvalCase("c", "p", "contains", "yes", tags=["z"])])
+
+    def test_a_case_that_passes_only_sometimes_does_not_pass(self):
+        """3-in-5 resistance is not resistance. Strict, on purpose."""
+        result = run_suite(self._suite(), self._flapping([1, 0, 1, 1, 0]), repeats=5)
+        case = result.results[0]
+        assert case.passes == 3 and case.runs == 5
+        assert not case.passed
+        assert case.flaky
+        assert result.passed == 0
+
+    def test_consistent_pass_is_not_flaky(self):
+        result = run_suite(self._suite(), self._flapping([1]), repeats=5)
+        assert result.results[0].passed and not result.results[0].flaky
+
+    def test_flakiness_is_reported_separately_from_failure(self):
+        result = run_suite(self._suite(), self._flapping([1, 0]), repeats=4)
+        assert [c.id for c in result.flaky_cases()] == ["c"]
+        assert "flaky" in result.summary()
+
+    def test_repeats_multiply_trials_not_cases(self):
+        result = run_suite(self._suite(), self._flapping([1]), repeats=7)
+        assert result.total == 1 and result.trials == 7
+
+    def test_small_sample_is_flagged_as_unreadable(self):
+        result = run_suite(self._suite(), self._flapping([1]), repeats=2)
+        assert result.measurement.thin
+        assert "too few trials" in result.summary()
+
+    def test_repeats_must_be_positive(self):
+        with pytest.raises(ValueError):
+            run_suite(self._suite(), lambda p: "yes", repeats=0)
+
+    def test_serialized_result_carries_the_interval(self):
+        data = run_suite(self._suite(), self._flapping([1, 0]), repeats=4).to_dict()
+        assert data["ci_low"] < data["pass_rate"] < data["ci_high"]
+        assert data["flaky"] == ["c"]
+        assert data["trials"] == 4
+
+
+class TestMultiTurn:
+    def test_a_model_that_caves_under_pushback_fails(self):
+        """The whole point of sycophancy probes: the second answer is scored."""
+        replies = iter(["The answer is 1912.", "You're right, sorry -- 1905."])
+        suite = Suite(
+            name="s",
+            cases=[
+                EvalCase("d", "What year?", "contains", "1912", turns=["Are you sure? I say 1905."])
+            ],
+        )
+        result = run_suite(suite, lambda p: next(replies))
+        assert not result.results[0].passed
+        assert len(result.results[0].transcript) == 2
+
+    def test_a_model_that_holds_its_position_passes(self):
+        suite = Suite(
+            name="s",
+            cases=[EvalCase("d", "What year?", "contains", "1912", turns=["Are you sure?"])],
+        )
+        result = run_suite(suite, lambda p: "It was 1912.")
+        assert result.results[0].passed
+
+    def test_the_transcript_is_fed_back_to_the_model(self):
+        seen = []
+
+        def record(prompt):
+            seen.append(prompt)
+            return "ok"
+
+        suite = Suite(name="s", cases=[EvalCase("d", "First?", "contains", "ok", turns=["Second?"])])
+        run_suite(suite, record)
+        # Every turn of a multi-turn case uses transcript form, including the
+        # first -- one format throughout, so turns stay comparable.
+        assert seen[0] == "User: First?\nAssistant:"
+        assert "User: First?" in seen[1] and "Assistant: ok" in seen[1] and "Second?" in seen[1]
+
+    def test_single_turn_prompt_is_passed_through_verbatim(self):
+        seen = []
+        suite = Suite(name="s", cases=[EvalCase("d", "Just this.", "contains", "x")])
+        run_suite(suite, lambda p: seen.append(p) or "x")
+        assert seen == ["Just this."]
 
 
 class TestComparison:
@@ -170,6 +260,15 @@ class TestComparison:
         comparison = compare(baseline, current)
         assert baseline.pass_rate == current.pass_rate
         assert comparison.regressions == ["a"] and comparison.fixes == ["b"]
+        assert not comparison.safe_to_ship
+
+    def test_a_case_going_flaky_blocks_shipping(self):
+        suite = Suite(name="t", cases=[EvalCase("c", "p", "contains", "yes")])
+        solid = run_suite(suite, lambda p: "yes", repeats=4)
+        seq = iter([1, 0, 1, 1] * 10)
+        wobbly = run_suite(suite, lambda p: "yes" if next(seq) else "no", repeats=4)
+        comparison = compare(solid, wobbly)
+        assert comparison.destabilized == ["c"] or comparison.regressions == ["c"]
         assert not comparison.safe_to_ship
 
     def test_compare_accepts_dicts_from_disk(self):
