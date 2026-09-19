@@ -26,6 +26,14 @@ class TestDuplicates:
         assert len(groups) == 1
         assert list(groups.values())[0] == [0, 1]
 
+    def test_punctuation_does_not_hide_a_duplicate(self):
+        """One trailing '?' used to drop the similarity score from 1.0 to ~0.5."""
+        examples = [
+            Example("How do I reset my password?", "Click forgot password."),
+            Example("how do i reset my password", "Click forgot password"),
+        ]
+        assert len(exact_duplicates(examples)) == 1
+
     def test_near_duplicates_found(self):
         base = "the quick brown fox jumps over the lazy dog every single morning"
         examples = [

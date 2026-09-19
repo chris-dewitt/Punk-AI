@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
+import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -49,8 +50,16 @@ class Example:
 
 
 def normalize(text: str) -> str:
-    """Collapse the differences that should not count as different."""
-    return re.sub(r"\s+", " ", text.lower().strip())
+    """Collapse the differences that should not count as different.
+
+    Case, whitespace and punctuation all go. Punctuation matters: without
+    folding it, "reset my password" and "reset my password?" share no shingle
+    containing that last word, and a near-duplicate pair that differs by one
+    question mark scores around 0.5 instead of 1.0 -- which is exactly how
+    duplicate rows survive a dedup pass and get memorized.
+    """
+    stripped = "".join(" " if unicodedata.category(ch).startswith("P") else ch for ch in text)
+    return re.sub(r"\s+", " ", stripped.lower().strip())
 
 
 # --- duplicates -----------------------------------------------------------
