@@ -99,6 +99,54 @@ spelling, quotation marks that open and close, dialogue that looks like dialogue
 You are *not* looking for sense. It has no idea what it is saying, and at 5M
 parameters trained on 1.5M tokens it never will.
 
+## What this actually produced
+
+The run above, exactly as written -- 5.5M parameters, 8 books, 1.5M tokens,
+23 minutes on four CPU threads:
+
+```
+ step | train |   val |   gap
+  100 | 5.800 | 5.833 | +0.034
+  400 | 4.586 | 4.746 | +0.160
+  800 | 4.097 | 4.404 | +0.306
+ 1100 | 3.911 | 4.320 | +0.409
+ 1300 | 3.828 | 4.255 | +0.427   <- best
+ 1500 | 3.800 | 4.276 | +0.476   <- val rising, train still falling
+```
+
+Best validation loss 4.255, or a perplexity of about 70: faced with real text,
+the model is roughly as uncertain as if it were choosing among 70 equally likely
+words. A good large model on the same text lands in single digits.
+
+**Look at the gap column.** It opens from +0.03 to +0.48, and after step 1300 the
+validation loss turns upward while training loss keeps falling. That is
+overfitting, and you just watched it happen in twenty minutes instead of reading
+about it. The trainer saves the best checkpoint, not the last one, for exactly
+this reason.
+
+And the samples:
+
+> **It was** the Read in the brap of the whale, and then then the time in the
+> boat was the stature of the crew, like the Pequod's flukes, and to the first
+> one of the moices of the Swain-and-head...
+
+> **The old man's** hand in the bloom, and the fire, and the two in the
+> wigwlings of his own. "Adon't let me ask to you," said the King.
+
+> **"I do not** know that I have done so much of my heart; but I shall be and
+> not in the case I know that the Count is not very good."
+
+Three prompts, three different books. It learned Melville's vocabulary
+(*Pequod's flukes*, *the crew*, *the whale*), Grimm's register (*said the
+King*), and Stoker's (*the Count*, and elsewhere *the Professor*) -- and it
+stays inside one register per sample. Nobody told it there were eight authors.
+
+It also produces `brap`, `moices` and `wigwlings`: it has learned which
+sub-word pieces *tend* to follow each other without learning which combinations
+are real words. That failure is informative. It is the same machinery that makes
+a large model state a plausible falsehood in fluent prose -- the fluency and the
+truth are separate achievements, and only one of them is cheap.
+
 ## 5. Grade it with your own harness
 
 ```bash
