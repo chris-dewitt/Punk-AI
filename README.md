@@ -29,6 +29,32 @@ punk serve --backend llamacpp:http://127.0.0.1:8080 --policy strict
 
 ---
 
+## The part that is actually yours
+
+Open weights give you weights. Not the corpus, not the tokenizer's merge
+decisions, not the training code. So the repo includes the whole pipeline at a
+scale that fits on hardware you own:
+
+```bash
+punk corpus                      # public-domain text, with a corpus card
+punk tokenizer                   # byte-level BPE, pure stdlib, ~3 seconds
+punk pretrain --steps 1500       # a ~5M-param model, ~15 min on a CPU
+punk sample runs/nano --prompt "It was"
+punk eval capability_smoke --backend nano:runs/nano
+```
+
+Roughly 300 readable lines stand between a token id and a probability
+distribution over the next one. That is the whole mystery. What a frontier lab
+does differently is scale, data and post-training — the architecture is, allowing
+for details, the same one, and this implementation uses the modern version of it
+(RMSNorm, RoPE, SwiGLU, grouped-query attention) rather than the GPT-2 relic
+usually taught.
+
+**Be clear-eyed about what you get.** A model this size writes coherent English
+and nothing more. It is not an assistant and will not replace one. What it
+replaces is the belief that any of this is magic — and it is the only model in
+your stack whose training data you can actually name.
+
 ## Why this exists
 
 The gap between "I use an AI product" and "I build with AI" is mostly a set of
@@ -44,6 +70,7 @@ practical questions nobody answers in one place:
 | Can I fine-tune on one consumer GPU? | `punk plan` — QLoRA memory math, and `labs/04` |
 | Is my training data clean? | `punk data` — dedupe, PII, contamination, canaries |
 | How do I expose it without getting owned? | `punk serve`, and `docs/THREAT_MODEL.md` |
+| What is actually *in* a model? | `punk pretrain` — train one and find out |
 
 ## The labs
 
@@ -58,6 +85,7 @@ behind an audited endpoint you built.
 | [04 — Fine-tune it](labs/04_finetune_it.md) | QLoRA on one GPU, data checked first | 8 GB+ GPU |
 | [05 — Serve it safely](labs/05_serve_it_safely.md) | Auth, rate limits, guards, audit chain | Any laptop |
 | [06 — Red-team it](labs/06_red_team_it.md) | Break your own stack before someone else does | Any laptop |
+| [07 — Train your own](labs/07_train_your_own.md) | Corpus to tokenizer to weights, end to end | Any laptop |
 
 Every lab runs end to end with the built-in `echo` backend, so you can do the
 whole sequence — including the serving and red-teaming labs — before you own a
@@ -67,6 +95,7 @@ GPU. Swap in real weights when you have them.
 
 ```
 src/punkai/
+  nano/        train a model from scratch: BPE tokenizer, transformer, trainer
   registry/    manifests, licence gating, hash + safetensors verification
   hardware/    VRAM math: weights, KV cache, quantization, max context
   loading/     load calls that cannot silently execute someone else's Python
@@ -85,9 +114,10 @@ never had a CUDA driver.
 pip install -e .              # core: zero dependencies
 pip install -e '.[hub]'       # + downloading from the Hub
 pip install -e '.[torch]'     # + in-process inference
+pip install -e '.[nano]'      # + training your own model from scratch
 pip install -e '.[train]'     # + QLoRA fine-tuning
 pip install -e '.[dev]'       # + pytest and ruff
-pytest                        # 274 tests, no network, no GPU, under a second
+pytest                        # 360 tests, no network, no GPU required
 ```
 
 ## Three opinions this repo is built on
@@ -104,7 +134,13 @@ The guards catch the obvious and will miss the clever. The control that actually
 works is architectural: never give a model an authority you wouldn't give the
 person feeding it text. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
-**3. Your fifty hand-written eval cases beat any leaderboard.**
+**3. Numbers get an interval or they do not get quoted.**
+A pass rate from a single run on seven cases is not evidence — 3/7 is compatible
+with anything from 16% to 75%. Every rate here carries a Wilson confidence
+interval, `--repeats` runs each case several times, and a case that passes only
+sometimes is reported as flaky rather than averaged into a number that hides it.
+
+**4. Your fifty hand-written eval cases beat any leaderboard.**
 Public benchmarks measure someone else's distribution, usually one that has
 leaked into training data. `punk eval` exists so writing your own costs a JSON
 file, and `--baseline` tells you exactly which cases a change broke.
